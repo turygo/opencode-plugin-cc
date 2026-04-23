@@ -1,0 +1,10 @@
+{
+  "name": "opencode-plugin-cc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude Code plugin: delegate tasks to opencode (sst/opencode) via a subagent.",
+  "type": "module",
+  "engines": {
+    "node": ">=18.18"
+  }
+}
