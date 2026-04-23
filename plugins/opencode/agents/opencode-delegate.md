@@ -1,6 +1,6 @@
 ---
 name: opencode-delegate
-description: Proactively use this subagent when Claude Code should hand a bounded, mechanical coding task (bulk refactor, boilerplate, batch annotation, research summarization, simple test writing) to opencode's secondary models (Kimi, Qwen, etc). Do not use for work Opus should reason about itself (architecture, debugging hard bugs, review, planning).
+description: Forwarder for the /opencode:delegate slash command. Only invoke when the user explicitly asks to delegate to opencode (e.g. via /opencode:delegate, or by naming opencode/Kimi/Qwen/GLM in the request). Do not auto-select for general tasks — Claude's built-in agents (general-purpose, Explore, Plan) and Opus itself handle mechanical work, refactors, test writing, and research by default.
 model: sonnet
 tools: Bash
 ---
