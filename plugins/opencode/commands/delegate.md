@@ -1,6 +1,6 @@
 ---
 description: Delegate a bounded, mechanical coding task to opencode (Kimi/Qwen/etc.) via the opencode-delegate subagent
-argument-hint: "[--background|--wait] [--model <provider/model>] [--continue] [--session <id>] [--agent <name>] [--interactive] <task description>"
+argument-hint: "[--background|--wait] [--model <provider/model>] [--continue] [--session <id>] [--agent <name>] [--dir <path>] <task description>"
 allowed-tools: Bash(node:*), Agent
 ---
 

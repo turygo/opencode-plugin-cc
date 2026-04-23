@@ -29,7 +29,6 @@ Flag handling (treat these as routing controls, strip them from the prompt text)
 - `--continue` → pass through (opencode `-c`: continues the last opencode session).
 - `--session <id>` → pass through.
 - `--agent <name>` → pass through.
-- `--interactive` → pass through (disables `--dangerously-skip-permissions`).
 - `--dir <path>` → pass through.
 
 Forbidden behaviors:

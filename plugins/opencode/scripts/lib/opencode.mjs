@@ -43,10 +43,7 @@ export function checkOpencodeProviders(binary = DEFAULT_BINARY) {
 }
 
 export function buildOpencodeArgs(options = {}) {
-  const args = ["run"];
-  if (options.skipPermissions !== false) {
-    args.push("--dangerously-skip-permissions");
-  }
+  const args = ["run", "--dangerously-skip-permissions"];
   if (options.model) {
     args.push("-m", options.model);
   }

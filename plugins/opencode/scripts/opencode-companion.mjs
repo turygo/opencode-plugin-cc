@@ -46,12 +46,12 @@ const SELF_PATH = fileURLToPath(import.meta.url);
 
 const TASK_FLAGS = {
   valueOptions: new Set(["model", "session", "agent", "dir"]),
-  booleanOptions: new Set(["background", "wait", "continue", "interactive"])
+  booleanOptions: new Set(["background", "wait", "continue"])
 };
 
 const WATCH_FLAGS = {
   valueOptions: new Set(["job-id", "workspace", "prompt-file", "model", "session", "agent", "dir"]),
-  booleanOptions: new Set(["continue", "interactive"])
+  booleanOptions: new Set(["continue"])
 };
 
 const STATUS_FLAGS = {
@@ -113,7 +113,6 @@ async function handleTask(rest) {
     session: options.session ?? null,
     agent: options.agent ?? null,
     dir: options.dir ?? null,
-    interactive: Boolean(options.interactive),
     summary,
     prompt: summary,
     logFile: resolveJobLogFile(workspaceRoot, jobId),
@@ -158,7 +157,6 @@ async function runForeground({ workspaceRoot, baseRecord, options, prompt, binar
         session: options.session,
         agent: options.agent,
         dir: options.dir,
-        skipPermissions: !options.interactive,
         env: { ...process.env, NO_COLOR: process.env.NO_COLOR ?? "1" }
       },
       {
@@ -236,7 +234,6 @@ async function runBackground({ workspaceRoot, baseRecord, options, prompt }) {
   if (options.agent) args.push("--agent", options.agent);
   if (options.dir) args.push("--dir", options.dir);
   if (options.continue) args.push("--continue");
-  if (options.interactive) args.push("--interactive");
 
   const watcher = spawn(process.execPath, args, {
     cwd: options.dir ?? process.cwd(),
@@ -295,7 +292,6 @@ async function handleWatch(rest) {
         session: options.session ?? stored.session ?? null,
         agent: options.agent ?? stored.agent ?? null,
         dir: options.dir ?? stored.dir ?? null,
-        skipPermissions: !options.interactive,
         env: { ...process.env, NO_COLOR: process.env.NO_COLOR ?? "1" }
       },
       {
