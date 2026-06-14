@@ -1,22 +1,4 @@
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-
-export function ensureAbsolutePath(cwd, maybePath) {
-  return path.isAbsolute(maybePath) ? maybePath : path.resolve(cwd, maybePath);
-}
-
-export function createTempDir(prefix = "opencode-plugin-") {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-export function readJsonFile(filePath) {
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
-}
-
-export function writeJsonFile(filePath, value) {
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-}
 
 export function safeReadFile(filePath) {
   return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : "";
@@ -40,6 +22,26 @@ export function tailFile(filePath, maxBytes = 8192) {
   } finally {
     fs.closeSync(fd);
   }
+}
+
+// A fixed-size rolling tail: appends text but retains only the last
+// `maxLength` characters, so accumulating the output of an unbounded process
+// stream cannot grow memory without limit.
+export function createTailBuffer(maxLength = 65536) {
+  let value = "";
+  return {
+    push(text) {
+      value += text;
+      // Trim lazily: let the buffer grow to 2× before slicing so push stays
+      // amortized O(1) instead of re-copying ~maxLength chars on every chunk.
+      if (value.length > maxLength * 2) {
+        value = value.slice(value.length - maxLength);
+      }
+    },
+    value() {
+      return value.length > maxLength ? value.slice(value.length - maxLength) : value;
+    }
+  };
 }
 
 export function readStdinIfPiped() {

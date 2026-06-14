@@ -19,9 +19,9 @@ If the result says opencode is unavailable:
   - `Skip for now`
 - After install, rerun the setup check.
 
-If opencode is installed but no provider is authenticated:
-- Do not try to authenticate for the user. Tell them to run `!opencode auth login` themselves.
+If opencode is installed but no provider is authenticated (no stored credential and no provider API key in the environment):
+- Do not try to authenticate for the user. Tell them to run `!opencode auth login` themselves, or to export a provider key such as `OPENAI_API_KEY`.
 
 Output rules:
 - Present the final setup output to the user.
-- Preserve the version string and any provider-count details.
+- Preserve the version string and the credentials detail. Readiness depends on credentials, not on the discoverable-model count (opencode lists free models even with no credentials).

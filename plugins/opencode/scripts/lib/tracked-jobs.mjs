@@ -15,13 +15,6 @@ export function appendLogLine(logFile, message) {
   fs.appendFileSync(logFile, `[${nowIso()}] ${normalized}\n`, "utf8");
 }
 
-export function appendLogBlock(logFile, title, body) {
-  if (!logFile || !body) {
-    return;
-  }
-  fs.appendFileSync(logFile, `\n[${nowIso()}] ${title}\n${String(body).trimEnd()}\n`, "utf8");
-}
-
 export function createJobLogFile(logFile, title) {
   fs.writeFileSync(logFile, "", "utf8");
   if (title) {

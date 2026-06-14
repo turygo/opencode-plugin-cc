@@ -13,32 +13,6 @@ function truncate(text, maxLength = 80) {
   return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
-export function renderTaskForegroundResult(job, result) {
-  const status = result.exitCode === 0 ? "completed" : "failed";
-  const lines = [];
-
-  const stdout = result.stdout.trimEnd();
-  if (stdout) {
-    lines.push(stdout);
-  } else if (status === "completed") {
-    lines.push("(opencode completed with no stdout output)");
-  } else {
-    lines.push("(opencode failed with no stdout output)");
-  }
-
-  if (status === "failed" && result.stderr.trim()) {
-    const tail = result.stderr.trim().split(/\r?\n/).slice(-12).join("\n");
-    lines.push("", "stderr (last lines):", "```text", tail, "```");
-  }
-
-  lines.push(
-    "",
-    `[opencode-job] id=${job.id} status=${status} exit=${result.exitCode}${result.signal ? ` signal=${result.signal}` : ""} duration=${Math.round(result.durationMs / 100) / 10}s model=${job.model ?? "default"}`
-  );
-
-  return `${lines.join("\n")}\n`;
-}
-
 export function renderTaskBackgroundStarted(job) {
   const lines = [
     `[opencode-job] id=${job.id} status=started pid=${job.pid ?? "?"} model=${job.model ?? "default"}`,
@@ -187,7 +161,8 @@ export function renderSetupReport(report) {
     "",
     "Checks:",
     `- opencode binary: ${report.binary.path ? `${report.binary.path} (${report.binary.version ?? "unknown version"})` : "not found"}`,
-    `- providers / models: ${report.providers.ok ? `${report.providers.count} available${report.providers.sample?.length ? ` — sample: ${report.providers.sample.slice(0, 3).join(", ")}` : ""}` : `unavailable — ${report.providers.detail}`}`
+    `- credentials: ${report.auth?.ok ? report.auth.detail : `none — ${report.auth?.detail ?? "not checked"}`}`,
+    `- providers / models: ${report.providers.ok ? `${report.providers.count} discoverable${report.providers.sample?.length ? ` — sample: ${report.providers.sample.slice(0, 3).join(", ")}` : ""}` : `unavailable — ${report.providers.detail}`}`
   ];
 
   if (report.nextSteps.length > 0) {

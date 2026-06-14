@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 
-import { spawn } from "node:child_process";
 import fs from "node:fs";
-import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs, splitRawArgumentString } from "./lib/args.mjs";
+import { cancelJob, runWatchedJob, startBackgroundJob } from "./lib/job-runner.mjs";
 import { readStdinIfPiped, safeReadFile, tailFile } from "./lib/fs.mjs";
 import {
   buildSingleJobSnapshot,
@@ -16,12 +15,12 @@ import {
   resolveResultJob
 } from "./lib/job-control.mjs";
 import {
+  checkOpencodeAuth,
   checkOpencodeBinary,
   checkOpencodeProviders,
   resolveOpencodeBinary,
   runOpencodeForeground
 } from "./lib/opencode.mjs";
-import { terminateProcessTree } from "./lib/process.mjs";
 import {
   renderCancelReport,
   renderJobDetail,
@@ -35,9 +34,7 @@ import {
   resolveJobLogFile,
   resolveJobStderrFile,
   resolveJobStdoutFile,
-  resolveJobsDir,
-  upsertJob,
-  writeJobFile
+  upsertJob
 } from "./lib/state.mjs";
 import { appendLogLine, createJobLogFile, nowIso, stampSession } from "./lib/tracked-jobs.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
@@ -124,7 +121,6 @@ async function handleTask(rest) {
   appendLogLine(baseRecord.logFile, `model=${baseRecord.model ?? "default"}`);
   appendLogLine(baseRecord.logFile, `background=${background}`);
   upsertJob(workspaceRoot, baseRecord);
-  writeJobFile(workspaceRoot, jobId, baseRecord);
 
   if (background) {
     await runBackground({ workspaceRoot, baseRecord, options, prompt });
@@ -143,7 +139,6 @@ async function runForeground({ workspaceRoot, baseRecord, options, prompt, binar
     pid: process.pid
   };
   upsertJob(workspaceRoot, runningRecord);
-  writeJobFile(workspaceRoot, baseRecord.id, runningRecord);
 
   let result;
   try {
@@ -181,7 +176,6 @@ async function runForeground({ workspaceRoot, baseRecord, options, prompt, binar
       completedAt: nowIso()
     };
     upsertJob(workspaceRoot, failed);
-    writeJobFile(workspaceRoot, baseRecord.id, failed);
     process.stdout.write(
       `\n[opencode-job] id=${baseRecord.id} status=failed error=${errorMessage}\n`
     );
@@ -200,7 +194,6 @@ async function runForeground({ workspaceRoot, baseRecord, options, prompt, binar
     durationMs: result.durationMs
   };
   upsertJob(workspaceRoot, completed);
-  writeJobFile(workspaceRoot, baseRecord.id, completed);
 
   process.stdout.write(
     `\n[opencode-job] id=${baseRecord.id} status=${status} exit=${result.exitCode}${result.signal ? ` signal=${result.signal}` : ""} duration=${Math.round(result.durationMs / 100) / 10}s model=${baseRecord.model ?? "default"}\n`
@@ -216,42 +209,13 @@ async function runForeground({ workspaceRoot, baseRecord, options, prompt, binar
 }
 
 async function runBackground({ workspaceRoot, baseRecord, options, prompt }) {
-  const promptFile = path.join(resolveJobsDir(workspaceRoot), `${baseRecord.id}.prompt`);
-  fs.writeFileSync(promptFile, prompt, "utf8");
-
-  const args = [
-    SELF_PATH,
-    "_watch",
-    "--job-id",
-    baseRecord.id,
-    "--workspace",
+  const started = startBackgroundJob({
     workspaceRoot,
-    "--prompt-file",
-    promptFile
-  ];
-  if (options.model) args.push("--model", options.model);
-  if (options.session) args.push("--session", options.session);
-  if (options.agent) args.push("--agent", options.agent);
-  if (options.dir) args.push("--dir", options.dir);
-  if (options.continue) args.push("--continue");
-
-  const watcher = spawn(process.execPath, args, {
-    cwd: options.dir ?? process.cwd(),
-    detached: true,
-    stdio: "ignore",
-    env: process.env
+    baseRecord,
+    prompt,
+    options,
+    selfPath: SELF_PATH
   });
-  watcher.unref();
-
-  const started = {
-    ...baseRecord,
-    promptFile,
-    pid: watcher.pid,
-    phase: "starting",
-    status: "queued"
-  };
-  upsertJob(workspaceRoot, started);
-  writeJobFile(workspaceRoot, baseRecord.id, started);
 
   process.stdout.write(renderTaskBackgroundStarted(started));
 }
@@ -266,65 +230,8 @@ async function handleWatch(rest) {
     process.exit(2);
   }
 
-  const prompt = fs.readFileSync(promptFile, "utf8");
-  const stored = readStoredJob(workspaceRoot, jobId) ?? { id: jobId };
-  const startedAt = nowIso();
-  const runningRecord = {
-    ...stored,
-    status: "running",
-    phase: "running",
-    pid: process.pid,
-    startedAt
-  };
-  upsertJob(workspaceRoot, runningRecord);
-  writeJobFile(workspaceRoot, jobId, runningRecord);
-
-  const stdoutFile = stored.stdoutFile ?? resolveJobStdoutFile(workspaceRoot, jobId);
-  const stderrFile = stored.stderrFile ?? resolveJobStderrFile(workspaceRoot, jobId);
-
-  try {
-    const result = await runOpencodeForeground(
-      {
-        cwd: options.dir ?? stored.dir ?? process.cwd(),
-        prompt,
-        model: options.model ?? stored.model ?? null,
-        continueSession: Boolean(options.continue),
-        session: options.session ?? stored.session ?? null,
-        agent: options.agent ?? stored.agent ?? null,
-        dir: options.dir ?? stored.dir ?? null,
-        env: { ...process.env, NO_COLOR: process.env.NO_COLOR ?? "1" }
-      },
-      {
-        onStdoutChunk: (chunk) => fs.appendFileSync(stdoutFile, chunk),
-        onStderrChunk: (chunk) => fs.appendFileSync(stderrFile, chunk)
-      }
-    );
-
-    const status = result.exitCode === 0 ? "completed" : "failed";
-    const completed = {
-      ...runningRecord,
-      status,
-      phase: status === "completed" ? "done" : "failed",
-      pid: null,
-      exitCode: result.exitCode,
-      signal: result.signal ?? null,
-      completedAt: nowIso(),
-      durationMs: result.durationMs
-    };
-    upsertJob(workspaceRoot, completed);
-    writeJobFile(workspaceRoot, jobId, completed);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const failed = {
-      ...runningRecord,
-      status: "failed",
-      phase: "failed",
-      pid: null,
-      errorMessage,
-      completedAt: nowIso()
-    };
-    upsertJob(workspaceRoot, failed);
-    writeJobFile(workspaceRoot, jobId, failed);
+  const { ok } = await runWatchedJob({ workspaceRoot, jobId, options });
+  if (!ok) {
     process.exit(1);
   }
 }
@@ -404,16 +311,7 @@ async function handleCancel(rest) {
   const cwd = process.cwd();
 
   const { workspaceRoot, job } = resolveCancelableJob(cwd, jobRef, { env: process.env });
-  const outcome = terminateProcessTree(job.pid);
-  const canceled = {
-    ...job,
-    status: "canceled",
-    phase: "canceled",
-    pid: null,
-    completedAt: nowIso()
-  };
-  upsertJob(workspaceRoot, canceled);
-  writeJobFile(workspaceRoot, job.id, canceled);
+  const { outcome } = cancelJob({ workspaceRoot, job, env: process.env });
   process.stdout.write(renderCancelReport(job, outcome));
 }
 
@@ -422,6 +320,9 @@ async function handleSetup(rest) {
   const { options } = parseArgs(argv, SETUP_FLAGS);
   const binaryPath = resolveOpencodeBinary();
   const binary = checkOpencodeBinary();
+  const auth = binary.available
+    ? checkOpencodeAuth()
+    : { ok: false, credentials: 0, envVars: 0, detail: "skipped (opencode not installed)" };
   const providers = binary.available
     ? checkOpencodeProviders()
     : { ok: false, count: 0, detail: "skipped (opencode not installed)" };
@@ -431,15 +332,18 @@ async function handleSetup(rest) {
     nextSteps.push(
       "Install opencode: `brew install sst/tap/opencode` or `npm install -g opencode-ai`."
     );
-  } else if (!providers.ok) {
+  } else if (!auth.ok) {
     nextSteps.push(
-      "Authenticate a provider: run `!opencode auth login` in your terminal."
+      "Authenticate a provider: run `!opencode auth login`, or export a provider API key (e.g. OPENAI_API_KEY)."
     );
   }
 
+  // Readiness requires real credentials: `opencode models` lists free/built-in
+  // models even with none configured, so it is reported but does not gate.
   const report = {
-    ready: binary.available && providers.ok,
+    ready: binary.available && auth.ok,
     binary: { path: binaryPath, version: binary.version, detail: binary.detail },
+    auth,
     providers,
     nextSteps
   };

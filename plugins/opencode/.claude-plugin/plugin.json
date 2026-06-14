@@ -1,6 +1,6 @@
 {
   "name": "opencode",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Delegate bounded coding tasks from Claude Code to opencode's secondary models (Kimi, Qwen, etc.) via a thin subagent.",
   "author": {
     "name": "turygo"

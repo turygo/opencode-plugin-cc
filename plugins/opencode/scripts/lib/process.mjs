@@ -24,17 +24,6 @@ export function runCommand(command, args = [], options = {}) {
   };
 }
 
-export function runCommandChecked(command, args = [], options = {}) {
-  const result = runCommand(command, args, options);
-  if (result.error) {
-    throw result.error;
-  }
-  if (result.status !== 0) {
-    throw new Error(formatCommandFailure(result));
-  }
-  return result;
-}
-
 export function binaryAvailable(command, versionArgs = ["--version"], options = {}) {
   const result = runCommand(command, versionArgs, options);
   if (result.error && result.error.code === "ENOENT") {
@@ -48,6 +37,28 @@ export function binaryAvailable(command, versionArgs = ["--version"], options = 
     return { available: false, detail };
   }
   return { available: true, detail: result.stdout.trim() || result.stderr.trim() || "ok" };
+}
+
+// Liveness probe via signal 0: it performs permission/existence checks without
+// actually delivering a signal. ESRCH means the pid is gone; EPERM means the
+// process exists but belongs to another user (still alive).
+export function isProcessAlive(pid, options = {}) {
+  if (!Number.isFinite(pid)) {
+    return false;
+  }
+  const killImpl = options.killImpl ?? process.kill.bind(process);
+  try {
+    killImpl(pid, 0);
+    return true;
+  } catch (error) {
+    if (error?.code === "ESRCH") {
+      return false;
+    }
+    if (error?.code === "EPERM") {
+      return true;
+    }
+    return false;
+  }
 }
 
 function looksLikeMissingProcessMessage(text) {

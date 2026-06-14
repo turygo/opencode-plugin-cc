@@ -1,10 +1,11 @@
-import { spawn } from "node:child_process";
-import fs from "node:fs";
+import { spawn as nodeSpawn } from "node:child_process";
 import process from "node:process";
 
+import { createTailBuffer } from "./fs.mjs";
 import { binaryAvailable, runCommand } from "./process.mjs";
 
 const DEFAULT_BINARY = "opencode";
+const DEFAULT_TAIL_BYTES = 65536;
 
 export function resolveOpencodeBinary(binary = DEFAULT_BINARY) {
   const which = runCommand(process.platform === "win32" ? "where" : "which", [binary]);
@@ -42,6 +43,52 @@ export function checkOpencodeProviders(binary = DEFAULT_BINARY) {
   };
 }
 
+// eslint-disable-next-line no-control-regex
+const ANSI_PATTERN = /\[[0-9;]*m/g;
+
+function stripAnsi(text) {
+  return text.replace(ANSI_PATTERN, "");
+}
+
+// Discover whether opencode has usable credentials. `opencode models` lists
+// built-in/free models even with zero credentials, so it cannot prove a task
+// will run. `opencode auth list` reports both stored credentials and provider
+// environment keys; either is enough to authenticate a request.
+//
+// The CLI output is formatted for humans, so this parses defensively: it counts
+// the summary lines ("N credentials" / "N environment variables") rather than
+// the decorative per-entry rows.
+export function checkOpencodeAuth(binary = DEFAULT_BINARY, options = {}) {
+  const runCommandImpl = options.runCommandImpl ?? runCommand;
+  const result = runCommandImpl(binary, ["auth", "list"]);
+  if (result.error || result.status !== 0) {
+    return {
+      ok: false,
+      credentials: 0,
+      envVars: 0,
+      detail: (result.stderr || result.stdout || "").trim() || `exit ${result.status}`
+    };
+  }
+
+  const text = stripAnsi(result.stdout || "");
+  const credentials = matchCount(text, /(\d+)\s+credentials?\b/i);
+  const envVars = matchCount(text, /(\d+)\s+environment variables?\b/i);
+  const ok = credentials > 0 || envVars > 0;
+  return {
+    ok,
+    credentials,
+    envVars,
+    detail: ok
+      ? `${credentials} credential(s), ${envVars} environment key(s)`
+      : "no credentials or provider environment keys found"
+  };
+}
+
+function matchCount(text, pattern) {
+  const match = text.match(pattern);
+  return match ? Number(match[1]) : 0;
+}
+
 export function buildOpencodeArgs(options = {}) {
   const args = ["run", "--dangerously-skip-permissions"];
   if (options.model) {
@@ -68,8 +115,15 @@ export function buildOpencodeArgs(options = {}) {
   return args;
 }
 
+// Runs `opencode run ...`, streaming every chunk to the hooks (which persist
+// full output to files) while retaining only a bounded tail in memory. A long
+// background task therefore cannot grow the watcher's memory without limit; the
+// returned stdout/stderr are the last `tailBytes` characters, used only for
+// inline error display.
 export function runOpencodeForeground(options, hooks = {}) {
   const binary = options.binary ?? DEFAULT_BINARY;
+  const spawn = options.spawn ?? nodeSpawn;
+  const tailBytes = options.tailBytes ?? DEFAULT_TAIL_BYTES;
   const args = buildOpencodeArgs(options);
   const started = Date.now();
 
@@ -80,17 +134,17 @@ export function runOpencodeForeground(options, hooks = {}) {
       stdio: ["ignore", "pipe", "pipe"]
     });
 
-    let stdoutBuf = "";
-    let stderrBuf = "";
+    const stdoutTail = createTailBuffer(tailBytes);
+    const stderrTail = createTailBuffer(tailBytes);
 
     child.stdout?.on("data", (chunk) => {
       const text = chunk.toString("utf8");
-      stdoutBuf += text;
+      stdoutTail.push(text);
       hooks.onStdoutChunk?.(text);
     });
     child.stderr?.on("data", (chunk) => {
       const text = chunk.toString("utf8");
-      stderrBuf += text;
+      stderrTail.push(text);
       hooks.onStderrChunk?.(text);
     });
     child.on("error", reject);
@@ -98,33 +152,12 @@ export function runOpencodeForeground(options, hooks = {}) {
       resolve({
         exitCode: code ?? (signal ? 128 : 0),
         signal,
-        stdout: stdoutBuf,
-        stderr: stderrBuf,
+        stdout: stdoutTail.value(),
+        stderr: stderrTail.value(),
         durationMs: Date.now() - started,
         command: binary,
         args
       });
     });
   });
-}
-
-export function spawnOpencodeDetached(options) {
-  const binary = options.binary ?? DEFAULT_BINARY;
-  const args = buildOpencodeArgs(options);
-
-  const stdoutFd = fs.openSync(options.stdoutFile, "a");
-  const stderrFd = fs.openSync(options.stderrFile, "a");
-
-  const child = spawn(binary, args, {
-    cwd: options.cwd ?? process.cwd(),
-    env: options.env ?? process.env,
-    detached: true,
-    stdio: ["ignore", stdoutFd, stderrFd]
-  });
-  child.unref();
-
-  fs.closeSync(stdoutFd);
-  fs.closeSync(stderrFd);
-
-  return { pid: child.pid, command: binary, args };
 }

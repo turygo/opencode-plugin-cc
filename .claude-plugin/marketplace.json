@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Delegate bounded coding tasks from Claude Code to opencode's secondary models (Kimi, Qwen, etc.) via a thin subagent, keeping Opus as the orchestrator.",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "plugins": [
     {
       "name": "opencode",
       "description": "Delegate tasks from Claude Code to opencode.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "author": {
         "name": "turygo"
       },
