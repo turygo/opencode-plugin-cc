@@ -1,5 +1,8 @@
 # opencode-plugin-cc
 
+> [!WARNING]
+> **Archived and no longer maintained.** I now use [Oh My Pi](https://github.com/can1357/oh-my-pi); this cursed workaround is obsolete.
+
 A Claude Code plugin that lets you delegate bounded, mechanical coding tasks from Claude (Opus) to [opencode](https://github.com/sst/opencode)'s cheaper secondary models — Kimi, Qwen, GLM, etc.
 
 Opus stays as the orchestrator. Opencode does the grunt work. The long tool log stays inside the subagent's transcript, so orchestration doesn't burn your main Opus context.
